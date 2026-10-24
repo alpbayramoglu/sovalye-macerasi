@@ -6,6 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Şövalye Macerası · deneme</title>
 <style>
+  @font-face { font-family: 'Baloo 2'; font-weight: 800; font-display: swap; src: url(../fonts/baloo2-800.woff) format('woff'); }   /* Sayı Bahçesi içinde yüklenir */
   * { box-sizing: border-box; touch-action: none; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #141A30; touch-action: none;
     -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
@@ -45,7 +46,18 @@
    8 dünya × 8 bölüm. 1–7. bölümler: bütün düşmanları yok et, blokların altındaki kapıya gir. 8. bölüm: dünyanın boss'u.
    Izgara 15×11: kenarlar ve çift koordinatlı sütunlar sert taş, aralar rastgele kırılan blok. Alev kendine de değer.
    Görünüm: bloklar üstten-önden (3/4) çizilir; zemin ve sert taşlar bölüm başında ayrı bir tuvale bir kez çizilir. */
-const VERSION = 'v0.1';   // her değişiklikte artır: v0.2, v0.3 …
+const VERSION = 'v0.2';   // her değişiklikte artır: v0.2, v0.3 …
+// Sayı Bahçesi'nin içinde (sayi-bahcesi/sovalye/) her bölüm 1 bilet, bitirince altın; ayrı repoda biletsiz bağımsız oyun
+const IN_APP = /\/sayi-bahcesi\/sovalye\//.test(location.pathname) || /[?&]app\b/.test(location.search);
+const Wallet = {
+  key: 'sayi-bahcesi.v1',
+  read() { try { return JSON.parse(localStorage.getItem(this.key)) || {}; } catch (e) { return {}; } },
+  write(d) { try { localStorage.setItem(this.key, JSON.stringify(d)); } catch (e) {} },
+  get tickets() { return this.read().tickets || 0; },
+  useTicket() { const d = this.read(); if (!(d.tickets > 0)) return false; d.tickets--; this.write(d); return true; },
+  addCoins(n) { const d = this.read(); d.coins = (d.coins || 0) + n; this.write(d); },
+};
+const home = () => location.assign(new URL('../', location.href).href);
 const COLS = 15, ROWS = 11, T = 48;
 // Kenar taşları mantıkta duruyor ama çizilmiyor: yerine ince çerçeve (F). Bilgiler soldaki panelde (SIDE).
 const F = 10, SIDE = 100, MW = (COLS - 2) * T + 2 * F, MH = (ROWS - 2) * T + 2 * F, W = SIDE + MW, H = MH;
@@ -378,7 +390,7 @@ function afterDeath() {
   lives--;
   if (lives <= 0) {
     G.state = 'over';
-    overlay(`<div class="card"><h2>Canın bitti</h2><p>Bölüm ${G.name} yeniden denenebilir.<br>Güçlendirmelerin duruyor.</p><button data-a="retry">Tekrar dene</button><button class="alt" data-a="map">Harita</button></div>`);
+    overlay(`<div class="card"><h2>Canın bitti</h2><p>Bölüm ${G.name} yeniden denenebilir.<br>Güçlendirmelerin duruyor.</p><button data-a="retry">Tekrar dene${IN_APP ? ' <small>🎟️ 1</small>' : ''}</button><button class="alt" data-a="map">Harita</button></div>`);
     return;
   }
   G = makeLevel(G.w, G.l);
@@ -386,12 +398,20 @@ function afterDeath() {
 function levelClear() {
   G.state = 'done';
   const idx = G.w * 8 + G.l; prog.done[idx] = true; saveProg();
+  const gain = G.l === 7 ? 5 : 2; if (IN_APP) Wallet.addCoins(gain);
+  const loot = IN_APP ? `<p style="font-size:22px;color:#B87A00;margin:0 0 10px">+${gain} 🪙</p>` : '';
+  const cost = IN_APP ? ' <small>🎟️ 1</small>' : '';
   if (G.l === 7) {
     const last = G.w === 7;
-    overlay(`<div class="card"><h2>${last ? 'Bütün dünyalar kurtarıldı! 🏆' : WORLDS[G.w].name + ' kurtarıldı!'}</h2><p>${last ? 'Gerçek bir şövalyesin!' : 'Sıradaki dünya açıldı: ' + WORLDS[G.w + 1].name}</p><button data-a="worlds">Dünya haritası</button></div>`);
-  } else overlay(`<div class="card"><h2>Bölüm ${G.name} tamam! ⭐</h2><p>Güçlendirmelerin seninle geliyor.</p><button data-a="nextlv">Sonraki bölüm</button><button class="alt" data-a="map">Harita</button></div>`);
+    overlay(`<div class="card"><h2>${last ? 'Bütün dünyalar kurtarıldı! 🏆' : WORLDS[G.w].name + ' kurtarıldı!'}</h2><p>${last ? 'Gerçek bir şövalyesin!' : 'Sıradaki dünya açıldı: ' + WORLDS[G.w + 1].name}</p>${loot}<button data-a="worlds">Dünya haritası</button></div>`);
+  } else overlay(`<div class="card"><h2>Bölüm ${G.name} tamam! ⭐</h2><p>Güçlendirmelerin seninle geliyor.</p>${loot}<button data-a="nextlv">Sonraki bölüm${cost}</button><button class="alt" data-a="map">Harita</button></div>`);
 }
-function startLevel(w, l) { lives = 3; G = makeLevel(w, l); scene = 'play'; document.body.classList.add('playing'); overlay(''); }
+function startLevel(w, l) {
+  if (IN_APP && !Wallet.useTicket()) {
+    overlay(`<div class="card"><h2>🎟️ Biletin bitti</h2><p>Sayı Bahçesi'nde bir matematik turu bitir,<br>bilet kazan. Her bölüm 1 bilet.</p><button data-a="home">Sayı Bahçesi</button><button class="alt" data-a="closeov">Tamam</button></div>`);
+    return;
+  }
+  lives = 3; G = makeLevel(w, l); scene = 'play'; document.body.classList.add('playing'); overlay(''); }
 function toMap(s = 'world') { scene = s; G = null; document.body.classList.remove('playing'); held.length = 0; overlay(''); mapT = 0; }
 
 /* ---------- çizim: ortak ---------- */
@@ -794,6 +814,7 @@ function drawWorlds() {
   // başlık şeridi
   ribbon(W / 2, 40, 330, 'Şövalye Macerası');
   c.font = `800 13px ${FONT}`; c.fillStyle = 'rgba(30,34,51,.55)'; c.textAlign = 'right'; c.fillText(VERSION, W - 10, H - 10); c.textAlign = 'left';
+  if (IN_APP) { homeBtn(); ticketChip(); }
   // adalar arası yol
   c.setLineDash([2, 14]); c.lineCap = 'round'; c.lineWidth = 7; c.strokeStyle = '#FFE9A8'; c.beginPath();
   WPOS.forEach(([x, y], i) => i ? c.lineTo(x, y + 18) : c.moveTo(x, y + 18)); c.stroke(); c.setLineDash([]);
@@ -930,6 +951,7 @@ function drawWorld() {
   drawAmb(mapAmb);
   ribbon(W / 2 + 40, 40, 360, `${w + 1}. Dünya · ${WORLDS[w].name}`);
   backBtn();
+  if (IN_APP) ticketChip();
 }
 function tower(x, y, open, done) {   // boss durağı: bayraklı kule
   const c = ctx; c.lineJoin = 'round'; c.strokeStyle = INK; c.lineWidth = 3.5;
@@ -944,6 +966,19 @@ function tower(x, y, open, done) {   // boss durağı: bayraklı kule
   c.fillStyle = done ? '#FFC21F' : '#E5483B'; c.beginPath(); c.moveTo(x, y - 92); c.lineTo(x + 24 + Math.sin(mapT * 6) * 2, y - 85); c.lineTo(x, y - 77); c.closePath(); c.fill(); c.stroke();
   if (!open) lock(x, y - 20); else outlined(done ? '★' : 'BOSS', x, y - 20, done ? 26 : 16, done ? '#FFC21F' : '#fff');
 }
+function homeBtn() {   // Sayı Bahçesi'ne dön
+  const c = ctx; c.fillStyle = INK; c.beginPath(); c.arc(40, 40, 26, 0, 7); c.fill();
+  c.fillStyle = '#34C17B'; c.beginPath(); c.arc(40, 38, 23, 0, 7); c.fill();
+  c.fillStyle = '#fff'; c.strokeStyle = INK; c.lineWidth = 2.5; c.lineJoin = 'round';
+  c.beginPath(); c.moveTo(27, 39); c.lineTo(40, 26); c.lineTo(53, 39); c.lineTo(49, 39); c.lineTo(49, 50); c.lineTo(31, 50); c.lineTo(31, 39); c.closePath(); c.fill(); c.stroke();
+  c.fillStyle = '#E5483B'; rr(37, 42, 6, 8, 2); c.fill();
+}
+function ticketChip() {
+  const c = ctx, n = Wallet.tickets, x = W - 96, y = 18;
+  c.fillStyle = INK; rr(x, y, 82, 40, 14); c.fill(); c.fillStyle = '#fff'; rr(x + 3, y + 3, 76, 34, 11); c.fill();
+  c.fillStyle = '#E5483B'; rr(x + 12, y + 11, 26, 18, 4); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.arc(x + 12, y + 20, 3.5, 0, 7); c.arc(x + 38, y + 20, 3.5, 0, 7); c.fill();
+  outlined(String(n), x + 58, y + 21, 22, n > 0 ? '#FFC21F' : '#D5DCE8');
+}
 function backBtn() {
   const c = ctx; c.fillStyle = INK; c.beginPath(); c.arc(40, 40, 26, 0, 7); c.fill();
   c.fillStyle = '#3FA9F5'; c.beginPath(); c.arc(40, 38, 23, 0, 7); c.fill();
@@ -952,6 +987,7 @@ function backBtn() {
 }
 function mapTap(lx, ly) {
   if (scene === 'worlds') {
+    if (IN_APP && Math.hypot(lx - 40, ly - 40) < 34) { sfx('tap'); return home(); }
     WPOS.forEach(([x, y], w) => { if (Math.hypot(lx - x, (ly - y) * 1.4) < 72 && worldOpen(w)) { curWorld = w; scene = 'world'; mapT = 0; sfx('tap'); } });
     return;
   }
@@ -1042,6 +1078,8 @@ ov.addEventListener('click', e => {
   if (act === 'resume') { G.state = 'play'; overlay(''); }
   if (act === 'map') { curWorld = G.w; toMap('world'); }
   if (act === 'worlds') toMap('worlds');
+  if (act === 'home') home();
+  if (act === 'closeov') overlay('');
 });
 
 function fit() {
