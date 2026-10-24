@@ -46,7 +46,7 @@
    8 dünya × 8 bölüm. 1–7. bölümler: bütün düşmanları yok et, blokların altındaki kapıya gir. 8. bölüm: dünyanın boss'u.
    Izgara 15×11: kenarlar ve çift koordinatlı sütunlar sert taş, aralar rastgele kırılan blok. Alev kendine de değer.
    Görünüm: bloklar üstten-önden (3/4) çizilir; zemin ve sert taşlar bölüm başında ayrı bir tuvale bir kez çizilir. */
-const VERSION = 'v0.2';   // her değişiklikte artır: v0.2, v0.3 …
+const VERSION = 'v0.3';   // her değişiklikte artır: v0.2, v0.3 …
 // Sayı Bahçesi'nin içinde (sayi-bahcesi/sovalye/) her bölüm 1 bilet, bitirince altın; ayrı repoda biletsiz bağımsız oyun
 const IN_APP = /\/sayi-bahcesi\/sovalye\//.test(location.pathname) || /[?&]app\b/.test(location.search);
 const Wallet = {
@@ -145,7 +145,7 @@ function makeLevel(w, l) {
   floorCache = null;
   return {
     w, l, R, name: R.name, th, map, hidden, items: {}, door: null, bombs: [], flames: [], parts: [], shots: [], rings: [], enemies,
-    amb: makeAmb(th.amb, 7, T, T, (COLS - 2) * T, (ROWS - 2) * T),
+    amb: [],
     boss: R.boss ? mkBoss(R.boss, 9, 5, w) : null,
     p: { x: 1, y: 1, dir: 'down', last: null, walk: 0, dead: 0, inv: 1.2 }, t: 0, state: 'play', clearT: 0, shake: 0,
   };
@@ -913,7 +913,7 @@ function lock(x, y) {
 }
 
 /* ---------- çizim: bölüm yolu ---------- */
-const LPOS = [[90, 340], [185, 258], [280, 340], [375, 258], [470, 340], [565, 258], [650, 330], [670, 170]];
+const LPOS = [[95, 345], [178, 262], [261, 345], [344, 262], [427, 345], [510, 262], [585, 335], [575, 168]];
 function drawWorld() {
   const c = ctx, w = curWorld, key = WORLDS[w].th, th = THEMES[key]; mapT += 1 / 60;
   const g = c.createLinearGradient(0, 0, 0, 200); g.addColorStop(0, th.sky[0]); g.addColorStop(1, th.sky[1]); c.fillStyle = g; c.fillRect(0, 0, W, H);
@@ -924,9 +924,8 @@ function drawWorld() {
   }
   c.fillStyle = th.floor[0]; c.beginPath(); c.moveTo(0, H); for (let x = 0; x <= W; x += 12) c.lineTo(x, 222 - Math.sin(x * .009 + 1) * 10); c.lineTo(W, H); c.fill();
   // süsler: yalnız düğümlerden ve düğmelerden uzak yerlerde
-  for (const [px, py, s] of [[40, 214, .8], [470, 222, .7], [735, 400, .8], [30, 435, .6], [370, 440, .65], [565, 440, .7]]) prop(key, px, py, s);
-  if (!mapAmb || mapAmbKey !== key) { mapAmb = makeAmb(th.amb, 10, 0, 90, W, H - 90); mapAmbKey = key; }
-  stepAmb(mapAmb, 1 / 60);
+  for (const [px, py, s] of [[150, 214, .8], [430, 222, .7], [300, 440, .65], [520, 440, .7], [180, 440, .55]]) prop(key, px, py, s);
+  edgeWorlds(w);
   // patika
   const path = () => { c.beginPath(); LPOS.forEach(([x, y], i) => { if (!i) c.moveTo(x, y); else { const [px, py] = LPOS[i - 1]; c.quadraticCurveTo((px + x) / 2, i % 2 ? Math.min(py, y) - 20 : Math.max(py, y) + 20, x, y); } }); };
   c.lineCap = 'round'; c.lineJoin = 'round';
@@ -948,10 +947,39 @@ function drawWorld() {
     if (cur) { knight(x, y - 26, { dir: 'down', walk: 0, t: mapT, moving: false, scale: .9 }); arrowDown(x, y - 82 + Math.sin(mapT * 5) * 4); }
   });
   if (nx === 7 && unlocked(w * 8 + 7) && !prog.done[w * 8 + 7]) { knight(LPOS[7][0] - 46, LPOS[7][1] + 20, { dir: 'right', walk: 0, t: mapT, moving: false, scale: .9 }); arrowDown(LPOS[7][0], LPOS[7][1] - 104 + Math.sin(mapT * 5) * 4); }
-  drawAmb(mapAmb);
   ribbon(W / 2 + 40, 40, 360, `${w + 1}. Dünya · ${WORLDS[w].name}`);
   backBtn();
   if (IN_APP) ticketChip();
+}
+// Dünya geçişi: sağ kenarda sıradaki dünyanın toprağı, patika oraya uzanır, tabela gösterir; sol kenarda önceki dünyadan gelen yol
+function edgeWorlds(w) {
+  const c = ctx, nx = WORLDS[w + 1], pv = WORLDS[w - 1];
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const road = (pts, col) => { for (const [lw, cl] of [[30, INK], [24, col]]) { c.beginPath(); c.moveTo(...pts[0]); for (let i = 1; i < pts.length; i++) c.quadraticCurveTo(pts[i][0], pts[i][1], pts[i][2], pts[i][3]); c.strokeStyle = cl; c.lineWidth = lw; c.stroke(); } };
+  const roadCol = k => k === 'snow' || k === 'cloud' ? '#FFFFFF' : k === 'lava' || k === 'dark' ? '#8A7A90' : '#E9C98F';
+  if (nx) {
+    const th2 = THEMES[nx.th];
+    c.fillStyle = th2.floor[0]; c.beginPath(); c.moveTo(W, 170); c.bezierCurveTo(690, 175, 720, 260, 668, 300); c.bezierCurveTo(630, 340, 700, 400, 660, H); c.lineTo(W, H); c.closePath(); c.fill();
+    c.strokeStyle = shade(th2.floor[0], -.15); c.lineWidth = 4; c.stroke();
+    for (let k = 0; k < 14; k++) { c.fillStyle = th2.det; c.beginPath(); c.arc(690 + hash(k, w) * 50, 200 + hash(k, w, 2) * 240, 1.8, 0, 7); c.fill(); }
+    road([[LPOS[7][0] + 20, LPOS[7][1] + 26], [640, 230, 700, 215], [740, 200, W + 30, 190]], roadCol(nx.th));
+    prop(nx.th, 712, 400, .7);
+    sign(688, 300, nx.name);
+  }
+  if (pv) {
+    const th0 = THEMES[pv.th];
+    c.fillStyle = th0.floor[0]; c.beginPath(); c.moveTo(0, 300); c.bezierCurveTo(40, 300, 30, 360, 56, 400); c.bezierCurveTo(70, 420, 40, 440, 50, H); c.lineTo(0, H); c.closePath(); c.fill();
+    c.strokeStyle = shade(th0.floor[0], -.15); c.lineWidth = 4; c.stroke();
+    road([[-30, 380], [30, 372, LPOS[0][0] - 20, LPOS[0][1] + 8]], roadCol(pv.th));
+  }
+}
+function sign(x, y, text) {   // ahşap tabela: sıradaki dünyanın adı ve ok
+  const c = ctx; c.lineJoin = 'round'; c.strokeStyle = INK; c.lineWidth = 3;
+  c.fillStyle = '#8A5A33'; rr(x - 4, y - 6, 8, 46, 3); c.fill(); c.stroke();
+  c.font = `800 14px ${FONT}`; const tw = Math.max(64, c.measureText(text).width + 20);
+  c.fillStyle = '#C8955E'; c.beginPath(); c.moveTo(x - tw / 2, y - 30); c.lineTo(x + tw / 2, y - 30); c.lineTo(x + tw / 2 + 12, y - 17); c.lineTo(x + tw / 2, y - 4); c.lineTo(x - tw / 2, y - 4); c.closePath(); c.fill(); c.stroke();
+  c.strokeStyle = 'rgba(80,45,15,.4)'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(x - tw / 2 + 4, y - 17); c.lineTo(x + tw / 2, y - 17); c.stroke();
+  outlined(text + ' ›', x + 4, y - 16, 14, '#fff');
 }
 function tower(x, y, open, done) {   // boss durağı: bayraklı kule
   const c = ctx; c.lineJoin = 'round'; c.strokeStyle = INK; c.lineWidth = 3.5;
