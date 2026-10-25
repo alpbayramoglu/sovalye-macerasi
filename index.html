@@ -52,7 +52,7 @@
    8 dünya × 8 bölüm. 1–7. bölümler: bütün düşmanları yok et, blokların altındaki kapıya gir. 8. bölüm: dünyanın boss'u.
    Izgara 15×11: kenarlar ve çift koordinatlı sütunlar sert taş, aralar rastgele kırılan blok. Alev kendine de değer.
    Görünüm: bloklar üstten-önden (3/4) çizilir; zemin ve sert taşlar bölüm başında ayrı bir tuvale bir kez çizilir. */
-const VERSION = 'v0.12';   // her değişiklikte artır: v0.2, v0.3 …
+const VERSION = 'v0.13';   // her değişiklikte artır: v0.2, v0.3 …
 // Sayı Bahçesi'nin içinde (sayi-bahcesi/sovalye/) 1 bilet = 3 can (bölümler arası taşınır), bitirince altın; ayrı repoda biletsiz bağımsız oyun
 const IN_APP = /\/sayi-bahcesi\/sovalye\//.test(location.pathname) || /[?&]app\b/.test(location.search);
 const Wallet = {
@@ -141,7 +141,7 @@ function makeLevel(w, l) {
     const hard = x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1 || (x % 2 === 0 && y % 2 === 0);
     map[y].push(hard ? 1 : 0);
   } }
-  const safe = (x, y) => x + y <= (MP.on ? 5 : 4);   // başlangıç köşesi boş: ilk bombadan kaçacak yer olsun (2 kişide biraz daha geniş)
+  const safe = (x, y) => x + y <= 4;   // başlangıç köşesi boş: ilk bombadan kaçacak yer olsun
   const free = [];
   for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) if (!map[y][x] && !safe(x, y)) {
     const nearBoss = R.boss && Math.abs(x - 9) <= 2 && Math.abs(y - 5) <= 2;
@@ -164,7 +164,7 @@ function makeLevel(w, l) {
     w, l, R, name: R.name, th, map, hidden, src, items: {}, door: null, bombs: [], flames: [], parts: [], shots: [], rings: [], enemies,
     amb: [],
     boss: R.boss ? mkBoss(R.boss, 9, 5, w) : null,
-    p: mkP(1, 1), p2: MP.on ? mkP(1, 3) : null, id: ++levelSeq, t: 0, state: 'play', clearT: 0, shake: 0,
+    p: mkP(1, 1), p2: null, id: ++levelSeq, t: 0, state: 'play', clearT: 0, shake: 0,
   };
   g.ps = players(g); return g;
 }
@@ -172,6 +172,7 @@ let levelSeq = 0;
 const mkP = (x, y) => ({ x, y, dir: 'down', last: null, walk: 0, dead: 0, inv: 1.2, mv: false });
 const players = g => [g.p, g.p2].filter(Boolean);
 const alive = () => players(G).filter(p => !p.dead);
+const stat = p => G.mode === 'battle' ? p : prog;   // savaşta güçlendirmeler her şövalyenin kendisinde, normal oyunda kayıtta
 const target = e => { let best = G.p, bd = Infinity; for (const p of alive()) { const d = (p.x - e.x) ** 2 + (p.y - e.y) ** 2; if (d < bd) { bd = d; best = p; } } return best; };   // en yakın şövalye
 const ESPD = { blob: 1.7, drop: 2.5, crab: 2.6, ghost: 1.35 };
 function mkEnemy(kind, x, y, mul = 1) {
@@ -193,7 +194,7 @@ const blocks = (e, x, y) => { const c = cell(x, y); return c === 1 || (c === 2 &
    Önceden yön alma: istenen yön henüz kapalıysa eski yönde devam edilir, dönülebilen ilk yerde dönülür. */
 function movePlayer(dt, d, p = G.p) {
   p.mv = !!d && !p.dead; if (!p.mv) return;
-  const dist = (2.25 + prog.speed * .3) * dt;   // şövalye de yavaş başlar; her hız güçlendirmesi küçük bir artış
+  const dist = (2.25 + stat(p).speed * .3) * dt;   // şövalye de yavaş başlar; her hız güçlendirmesi küçük bir artış
   if (tryMove(p, d, dist, dt)) { p.dir = d; p.last = d; return; }
   if (p.last && p.last !== d && p.last !== BACK[d] && tryMove(p, p.last, dist, dt)) { p.dir = p.last; return; }
   p.dir = d;
@@ -326,9 +327,9 @@ function dropBomb(p = G && G.p) {
   if (MP.kind === 'guest') { MP.b++; return; }   // misafir telefon: bombayı oyunu yöneten telefon koyar
   if (scene !== 'play' || G.state !== 'play' || !p || p.dead) return;
   const x = Math.round(p.x), y = Math.round(p.y), o = p === G.p2 ? 2 : 1;   // bomba sayısı her şövalyeye ayrı
-  if (bombAt(x, y) || G.bombs.filter(b => b.o === o).length >= prog.bombs) return;
+  if (bombAt(x, y) || G.bombs.filter(b => b.o === o).length >= stat(p).bombs) return;
   if (G.boss && !G.boss.dead && Math.round(G.boss.x) === x && Math.round(G.boss.y) === y) return;
-  G.bombs.push({ x, y, t: 2.4, r: prog.fire, o }); sfx('drop');
+  G.bombs.push({ x, y, t: 2.4, r: stat(p).fire, o }); sfx('drop');
 }
 function explode(b) {
   G.bombs.splice(G.bombs.indexOf(b), 1);
@@ -409,8 +410,10 @@ function step(dt) {
   G.parts = G.parts.filter(p => p.t > 0);
   for (const r of G.rings) r.t += dt; G.rings = G.rings.filter(r => r.t < .45);
   stepAmb(G.amb, dt);
-  if (G.state !== 'play') { if (G.state === 'clear' && (G.clearT += dt) > 1.4) levelClear(); if (G.state === 'dead' && ((G.ps.find(q => q.dead) || G.p).dead += dt) > 1.6) afterDeath(); return; }
-  for (const p of G.ps) { if (p.inv > 0) p.inv -= dt; if (p.dead && (p.dead += dt) > 1.6) Object.assign(p, mkP(1, p === G.p ? 1 : 3), { inv: 2 }); }   // 2 kişide ölen şövalye köşeden yeniden başlar
+  if (G.state !== 'play') { if (G.state === 'clear' && (G.clearT += dt) > 1.4) levelClear(); if (G.state === 'dead' && (G.p.dead += dt) > 1.6) afterDeath(); if (G.state === 'round' && (G.roundT += dt) > 2.6) nextRound(); return; }
+  for (const p of G.ps) { if (p.inv > 0) p.inv -= dt; if (p.dead) p.dead += dt; }
+  // savaş: biri yanınca tur ölüm sesi bitince biter; o arada öbürü de yanarsa berabere
+  if (G.mode === 'battle' && G.ps.some(p => p.dead) && (G.endT += dt) > 1.6) return roundEnd();
   movePlayer(dt, held[held.length - 1], G.p); if (G.p2) movePlayer(dt, held2[held2.length - 1], G.p2);
   for (const b of [...G.bombs]) if ((b.t -= dt) <= 0) explode(b);
   for (const f of G.flames) f.t -= dt; G.flames = G.flames.filter(f => f.t > 0);
@@ -431,12 +434,11 @@ function step(dt) {
     const it = G.items[px + ',' + py];
     if (it && Math.hypot(p.x - px, p.y - py) < .4) {
       delete G.items[px + ',' + py]; sfx('item'); burst(px, py, 16, ['#FFD23F', '#fff'], 6);
-      const from = G.src[px + ',' + py] ?? G.w * 8 + G.l;
-      prog.got[from] = true; prog.pending = prog.pending.filter(q => q.idx !== from);
-      if (it === 'bomb') prog.bombs = Math.min(CAP.bombs, prog.bombs + 1);
-      if (it === 'fire') prog.fire = Math.min(CAP.fire, prog.fire + 1);
-      if (it === 'speed') prog.speed = Math.min(CAP.speed, prog.speed + 1);
-      saveProg();
+      const st = stat(p);
+      if (it === 'bomb') st.bombs = Math.min(CAP.bombs, st.bombs + 1);
+      if (it === 'fire') st.fire = Math.min(CAP.fire, st.fire + 1);
+      if (it === 'speed') st.speed = Math.min(CAP.speed, st.speed + 1);
+      if (st === prog) { const from = G.src[px + ',' + py] ?? G.w * 8 + G.l; prog.got[from] = true; prog.pending = prog.pending.filter(q => q.idx !== from); saveProg(); }
       G.toast = { text: { bomb: '+1 bomba', fire: 'Alev uzadı', speed: 'Hız arttı' }[it], t: 1.4 };
     }
     if (G.door && !foesLeft() && px === G.door.x && py === G.door.y && Math.hypot(p.x - px, p.y - py) < .3) { G.state = 'clear'; sfx('clear'); return; }
@@ -445,12 +447,10 @@ function step(dt) {
 }
 function die(p = G.p) {
   if (G.state !== 'play' || p.dead) return; p.dead = .01; sfx('die');
-  if (!G.p2) { G.state = 'dead'; return; }
-  prog.lives = Math.max(0, prog.lives - 1); saveProg();   // 2 kişi: canlar ortak, bölüm sürer; can bitince ikisi de baştan
-  if (prog.lives <= 0) G.state = 'dead';
+  if (G.mode !== 'battle') G.state = 'dead';
 }
 function afterDeath() {
-  if (!G.p2) { prog.lives = Math.max(0, prog.lives - 1); saveProg(); }
+  prog.lives = Math.max(0, prog.lives - 1); saveProg();
   if (prog.lives <= 0) {
     G.state = 'over';
     overlay(`<div class="card"><h2>Canın bitti</h2><p>Bölüm ${G.name} yeniden denenebilir.<br>Güçlendirmelerin duruyor.</p><button data-a="retry">Tekrar dene${IN_APP ? ' <small>🎟️ 1</small>' : ''}</button><button class="alt" data-a="map">Harita</button></div>`);
@@ -639,7 +639,7 @@ function draw() {
   drawAmb(G.amb);
   const mid = COLS * T / 2;
   if (G.toast) outlined(G.toast.text, mid, T + 30, 26, '#FFC21F');
-  if (G.t < 1.4 && G.state === 'play') { c.globalAlpha = clamp((1.4 - G.t) * 2, 0, 1); outlined(G.boss ? 'BOSS!' : 'Bölüm ' + G.name, mid, ROWS * T / 2, 64, G.boss ? '#FFC21F' : '#fff'); c.globalAlpha = 1; }
+  if (G.t < 1.4 && G.state === 'play') { c.globalAlpha = clamp((1.4 - G.t) * 2, 0, 1); outlined(G.boss ? 'BOSS!' : G.mode === 'battle' ? G.name : 'Bölüm ' + G.name, mid, ROWS * T / 2, 64, G.boss ? '#FFC21F' : '#fff'); c.globalAlpha = 1; }
   c.restore();
   c.restore();
 }
@@ -653,6 +653,7 @@ function panel() {   // sol panel: durdur düğmesi, bölüm, can, güçlendirme
   c.fillStyle = 'rgba(255,255,255,.4)'; c.beginPath(); c.ellipse(pw / 2 - 7, 25, 7, 4, -.4, 0, 7); c.fill();
   c.fillStyle = INK; rr(pw / 2 - 8, 25, 6, 18, 2); c.fill(); rr(pw / 2 + 2, 25, 6, 18, 2); c.fill();
   outlined(G.name, pw / 2, 80, 24, '#FFC21F');
+  if (G.mode === 'battle') return battlePanel(pw);
   for (let i = 0; i < 3; i++) heart(22 + i * 24, 108, i < prog.lives);
   const slot = (y, it, n) => { c.fillStyle = 'rgba(255,255,255,.09)'; rr(10, y - 18, pw - 20, 36, 12); c.fill(); icon(30, y, it, 1); outlined(String(n), 64, y + 1, 22, '#fff'); };
   slot(146, 'bomb', prog.bombs); slot(188, 'fire', prog.fire); slot(230, 'speed', prog.speed + 1);
@@ -670,6 +671,20 @@ function panel() {   // sol panel: durdur düğmesi, bölüm, can, güçlendirme
     c.fillStyle = '#2B3550'; c.beginPath(); c.arc(17, y, 3.5, 0, 7); c.arc(43, y, 3.5, 0, 7); c.fill();
     outlined(String(n), 64, y + 1, 22, n > 0 ? '#FFC21F' : '#D5DCE8');
   }
+}
+function battlePanel(pw) {   // savaş: iki şövalye, kazandığı turlar (yıldız) ve güçlendirmeleri
+  const c = ctx;
+  [G.p, G.p2].forEach((p, i) => {
+    const y0 = 104 + i * 168;
+    c.fillStyle = 'rgba(255,255,255,.09)'; rr(8, y0, pw - 16, 156, 14); c.fill();
+    knight(pw / 2, y0 + 36, { dir: 'down', walk: 0, t: G.t + i, moving: false, scale: .62, alt: i === 1 });
+    for (let k = 0; k < 2; k++) starShape(pw / 2 - 14 + k * 28, y0 + 80, 11, k < G.score[i]);
+    [['bomb', p.bombs], ['fire', p.fire], ['speed', p.speed + 1]].forEach(([it, n], j) => { icon(22 + j * 24, y0 + 112, it, .62); outlined(String(n), 22 + j * 24, y0 + 136, 16, '#fff'); });
+  });
+}
+function starShape(x, y, r, on) {
+  const c = ctx; c.beginPath(); for (let k = 0; k < 10; k++) { const rr2 = k % 2 ? r * .45 : r, a = -Math.PI / 2 + k * Math.PI / 5; c.lineTo(x + Math.cos(a) * rr2, y + Math.sin(a) * rr2); } c.closePath();
+  c.fillStyle = on ? '#FFC21F' : 'rgba(255,255,255,.18)'; c.fill(); c.lineJoin = 'round'; c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
 }
 function door(X, Y, open) {
   const c = ctx; c.fillStyle = 'rgba(20,20,40,.25)'; c.beginPath(); c.ellipse(X + T / 2 + 3, Y + T - 3, 18, 4, 0, 0, 7); c.fill();
@@ -1245,7 +1260,7 @@ function noise(d, vol = .25) {
     s.buffer = buf; g.gain.value = vol; s.connect(f).connect(g).connect(ac.destination); s.start(); } catch (e) {}
 }
 function sfx(k) {
-  if (MP.kind === 'host' && MP.on && scene === 'play' && MP.fx.length < 20) MP.fx.push(k);   // misafir telefon da duysun
+  if (MP.kind === 'host' && MP.on && G && G.mode === 'battle' && scene === 'play' && MP.fx.length < 20) MP.fx.push(k);   // misafir telefon da duysun
   if (k === 'drop') tone(300, .08, 'triangle', .1);
   if (k === 'boom') { noise(.5); tone(120, .3, 'sine', .2, 40); }
   if (k === 'pop') tone(700, .15, 'square', .06, 1400);
@@ -1266,7 +1281,7 @@ function press(d, h = held) { const i = h.indexOf(d); if (i >= 0) h.splice(i, 1)
 function release(d, h = held) { const i = h.indexOf(d); if (i >= 0) h.splice(i, 1); }
 const KEYS2 = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };   // aynı klavyede 2. şövalye: oklar + Enter
 addEventListener('keydown', e => {
-  if (MP.kind === 'local' && scene === 'play') {
+  if (MP.kind === 'local' && scene === 'play' && G && G.mode === 'battle') {
     if (KEYS2[e.key]) { press(KEYS2[e.key], held2); e.preventDefault(); return; }
     if (e.key === 'Enter') { if (ov.hidden) dropBomb(G.p2); e.preventDefault(); return; }
   }
@@ -1275,8 +1290,8 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') { if (scene === 'play' && ov.hidden) pause(); else if (scene === 'world') scene = 'worlds'; }
   if (e.key === 'Enter' && ov.hidden) { if (scene === 'world') startLevel(curWorld, nextIn(curWorld)); else if (scene === 'worlds') { curWorld = curWorldOf(); scene = 'world'; } }
 });
-addEventListener('keyup', e => { if (MP.kind === 'local' && KEYS2[e.key]) release(KEYS2[e.key], held2); else if (KEYS[e.key]) release(KEYS[e.key]); });
-function pause() { if (MP.kind === 'guest') { if (G && G.state === 'play') MP.z++; return; } if (G && (G.state === 'over' || G.state === 'done')) { curWorld = G.w; return toMap('world'); } if (!G || G.state !== 'play') return; G.state = 'paused'; overlay(`<div class="card"><h2>Durdu</h2><p>Bölüm ${G.name}</p><button data-a="resume">Devam</button><button class="alt" data-a="map">Haritaya dön</button></div>`); }
+addEventListener('keyup', e => { if (KEYS2[e.key]) release(KEYS2[e.key], held2); if (KEYS[e.key]) release(KEYS[e.key]); });
+function pause() { if (MP.kind === 'guest') { if (G && G.state === 'play') MP.z++; return; } if (G && (G.state === 'over' || G.state === 'done')) { curWorld = G.w; return toMap('world'); } if (!G || G.state !== 'play') return; G.state = 'paused'; overlay(`<div class="card"><h2>Durdu</h2><p>${G.mode === 'battle' ? G.name : 'Bölüm ' + G.name}</p><button data-a="resume">Devam</button><button class="alt" data-a="map">Haritaya dön</button></div>`); }
 const toLogical = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
 // Dokunmatik: sol yarıda parmak nereye değerse joystick orada açılır; sağ yarıya dokunmak bomba bırakır
 const joy = { id: null, x0: 0, y0: 0, dir: null }, joyEl = document.getElementById('joy'), knob = document.getElementById('knob'), hint = document.getElementById('bombHint');
@@ -1314,27 +1329,61 @@ document.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preven
 const ov = document.getElementById('ov');
 function overlay(html) { ov.innerHTML = html; ov.hidden = !html; }
 ov.addEventListener('click', e => {
-  const a = e.target.closest('[data-a]'); if (!a) return; const act = a.dataset.a;
+  const a = e.target.closest('[data-a]'); if (!a) return; const act = a.dataset.a; keepAwake();
   if (act === 'nextlv') startLevel(G.w, G.l + 1);
   if (act === 'retry') startLevel(G.w, G.l);
   if (act === 'resume') { G.state = 'play'; overlay(''); }
-  if (act === 'map') { curWorld = G.w; toMap('world'); }
+  if (act === 'map') { if (G && G.mode === 'battle') endBattle(); else { curWorld = G.w; toMap('world'); } }
   if (act === 'worlds') toMap('worlds');
   if (act === 'home') home();
   if (act === 'closeov') overlay('');
   if (act === 'mplocal') mpLocal();
   if (act === 'mphost') mpHost();
   if (act === 'mpoff') mpOff();
+  if (act === 'battle') startBattle();
+  if (act === 'endbattle') endBattle();
   if (act === 'ready') { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (er) {} MP.phase = ''; mpPhase(G ? 'play' : 'wait'); }
   if (act === 'gresume') MP.z++;
   if (act === 'reload') location.assign(location.pathname + location.search);
 });
 
-/* ---------- iki kişi: aynı klavye ya da iki telefon (QR ile) ----------
-   Birlikte oynanır, canlar ortak. İki telefonda oyunu QR'ı gösteren telefon yönetir; öbürü yalnız yön ve bomba gönderir,
-   gelen anlık görüntüyü çizer. Eşleşme PeerJS'in ücretsiz sunucusuyla; oyun verisi telefonlar arasında doğrudan gider
-   (WebRTC, şifreli). Kütüphaneler sabit sürüm + bütünlük denetimiyle ve yalnız iki telefon seçilince yüklenir. */
-const MP = { kind: null, on: false, peer: null, conn: null, in: null, lastIn: 0, b: 0, z: 0, fx: [], phase: '', tick: 0 };
+/* ---------- savaş: iki şövalye karşı karşıya ----------
+   Normal akıştan ayrı; ilerleme kaydedilmez. Düşman yok, tuğlaların altından bomba/alev/hız çıkar, her şövalyeye ayrı yazılır.
+   3 turun 2'sini alan kazanır; her tur başka bir dünyanın görünümünde. */
+const BT = { score: [0, 0], round: 0, th: 0 }, BTH = Object.keys(THEMES), NAMES = ['Kırmızı şövalye', 'Yeşil şövalye'];
+function makeArena() {
+  const map = [];
+  for (let y = 0; y < ROWS; y++) { map.push([]); for (let x = 0; x < COLS; x++) map[y].push(x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1 || (x % 2 === 0 && y % 2 === 0) ? 1 : 0); }
+  const safe = (x, y) => x + y <= 4 || (COLS - 1 - x) + (ROWS - 1 - y) <= 4;   // iki köşe de boş
+  const softs = [];
+  for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) if (!map[y][x] && !safe(x, y) && Math.random() < .55) { map[y][x] = 2; softs.push([x, y]); }
+  softs.sort(() => Math.random() - .5);
+  const hidden = {}; ['bomb', 'bomb', 'bomb', 'bomb', 'fire', 'fire', 'fire', 'fire', 'speed', 'speed'].forEach((it, i) => { if (softs[i]) hidden[softs[i]] = it; });
+  const P = (x, y) => Object.assign(mkP(x, y), { bombs: 1, fire: 2, speed: 0 }), thk = BTH[(BT.th + BT.round - 1) % BTH.length];
+  const g = { mode: 'battle', w: 0, l: 0, R: {}, name: 'Tur ' + BT.round, thk, th: THEMES[thk], map, hidden, src: {}, items: {}, door: null, bombs: [], flames: [], parts: [], shots: [], rings: [], enemies: [], amb: [], boss: null,
+    p: P(1, 1), p2: P(COLS - 2, ROWS - 2), id: ++levelSeq, t: 0, state: 'play', clearT: 0, shake: 0, endT: 0, roundT: 0, score: [...BT.score], round: BT.round, win: -1 };
+  g.p2.dir = 'up'; g.ps = players(g); floorCache = null; return g;
+}
+function startBattle() { BT.score = [0, 0]; BT.round = 0; BT.th = rnd(0, BTH.length - 1); nextRound(); }
+function nextRound() { BT.round++; G = makeArena(); scene = 'play'; document.body.classList.add('playing'); held.length = 0; held2.length = 0; overlay(''); keepAwake(); }
+function endBattle() { if (MP.kind === 'local') { MP.kind = null; MP.on = false; } held2.length = 0; toMap('worlds'); }
+const scoreLine = sc => `<p style="font-size:26px;margin:0 0 10px;color:#1E2233">🔴 ${sc[0]} – ${sc[1]} 🟢</p>`;
+function roundEnd() {
+  const live = G.ps.filter(p => !p.dead), win = live.length === 1 ? (live[0] === G.p ? 0 : 1) : -1;
+  if (win >= 0) BT.score[win]++;
+  G.win = win; G.score = [...BT.score]; G.roundT = 0;
+  if (Math.max(...BT.score) >= 2) {
+    G.state = 'match'; sfx('bossdown');
+    overlay(`<div class="card"><h2>🏆 ${NAMES[win]} kazandı!</h2>${scoreLine(BT.score)}<button data-a="battle">Yeniden oyna</button><button class="alt" data-a="endbattle">Bitir</button></div>`);
+  } else { G.state = 'round'; sfx('clear'); overlay(`<div class="card"><h2>${G.round}. tur: ${win < 0 ? 'Berabere!' : NAMES[win] + ' kazandı'}</h2>${scoreLine(BT.score)}<p>Sıradaki tur başlıyor…</p></div>`); }
+}
+
+/* ---------- savaşta iki kişi: aynı klavye ya da iki cihaz (QR ile) ----------
+   İki cihazda oyunu QR'ı gösteren yönetir; öbürü yalnız yön ve bomba gönderir, gelen anlık görüntüyü çizer.
+   Eşleşme PeerJS'in ücretsiz sunucusuyla; oyun verisi cihazlar arasında doğrudan gider (WebRTC, şifreli).
+   Kütüphaneler sabit sürüm + bütünlük denetimiyle ve yalnız telefonla bağlan seçilince yüklenir.
+   Ekran açık tutulur (Wake Lock); telefon yine de uyursa uyanınca kendiliğinden yeniden bağlanır, tur o arada donar. */
+const MP = { kind: null, on: false, peer: null, conn: null, id: '', in: null, lastIn: 0, b: 0, z: 0, fx: [], phase: '', tick: 0, tries: 0, welcomed: false, lock: null, prev: '' };
 const held2 = [];
 const LIBS = {
   Peer: ['https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js', 'sha384-nlUQ8ZqCbvStErob+biJNzSgltf6urV3VGqhfIfzhmg9RXmpeRm76ELw0pYnKlTR'],
@@ -1347,53 +1396,84 @@ const loadLib = k => new Promise((ok, no) => {
 });
 const JOIN = new URLSearchParams(location.search).get('join');
 const card = (h, p, btns = '') => `<div class="card"><h2>${h}</h2><p>${p}</p>${btns}</div>`;
+async function keepAwake() {   // telefon ekranı kararmasın (bağlantı kopmasın)
+  if (MP.kind !== 'host' && MP.kind !== 'guest') return;
+  try { if ('wakeLock' in navigator && document.visibilityState === 'visible' && !(MP.lock && !MP.lock.released)) MP.lock = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || (MP.kind !== 'host' && MP.kind !== 'guest')) return;
+  keepAwake();
+  if (MP.on) return;
+  if (MP.kind === 'guest' && MP.phase === 'link') { MP.tries = 0; guestConnect(); }
+  if (MP.kind === 'host' && MP.peer && !MP.peer.destroyed && MP.peer.disconnected) MP.peer.reconnect();
+});
 function mpMenu() {
-  if (MP.kind) return overlay(card('👥 İki kişi', MP.kind === 'local' ? 'Aynı bilgisayarda oynuyorsunuz.' : MP.on ? 'Arkadaşın bağlı.' : 'Arkadaşın bekleniyor.',
-    '<button data-a="mpoff">Tek kişiye dön</button><button class="alt" data-a="closeov">Tamam</button>'));
-  overlay(card('👥 İki kişi', 'Birlikte oynayın, canlar ortak.',
-    (matchMedia('(pointer: fine)').matches ? '<button data-a="mplocal">Bu bilgisayarda</button>' : '') + '<button data-a="mphost">İki telefonla</button><button class="alt" data-a="closeov">Vazgeç</button>'));
+  if (MP.kind === 'host' && MP.on) return overlay(card('⚔️ Savaş', 'Arkadaşın bağlı.', '<button data-a="battle">Savaşa başla</button><button class="alt" data-a="mpoff">Bağlantıyı kapat</button>'));
+  if (MP.kind === 'host') return overlay(card('⚔️ Savaş', 'Arkadaşın bekleniyor.', '<button class="alt" data-a="mpoff">Vazgeç</button>'));
+  overlay(card('⚔️ Savaş', 'İki şövalye karşı karşıya.<br>3 turun 2\'sini alan kazanır.',
+    (matchMedia('(pointer: fine)').matches ? '<button data-a="mplocal">Bu bilgisayarda</button>' : '') + '<button data-a="mphost">Telefonla bağlan</button><button class="alt" data-a="closeov">Vazgeç</button>'));
 }
 function mpLocal() {
   MP.kind = 'local'; MP.on = true;
-  overlay(card('👥 Aynı klavye', 'Kırmızı şövalye: <kbd>W A S D</kbd> + <kbd>Boşluk</kbd><br>Yeşil şövalye: <kbd>oklar</kbd> + <kbd>Enter</kbd>', '<button data-a="closeov">Tamam</button>'));
+  overlay(card('⚔️ Aynı klavye', 'Kırmızı şövalye: <kbd>W A S D</kbd> + <kbd>Boşluk</kbd><br>Yeşil şövalye: <kbd>oklar</kbd> + <kbd>Enter</kbd>', '<button data-a="battle">Başla</button><button class="alt" data-a="mpoff">Vazgeç</button>'));
 }
-function dropP2() { held2.length = 0; if (G && G.p2) { G.p2 = null; G.ps = players(G); } }
 function mpOff() {
   const guest = MP.kind === 'guest';
   try { MP.peer && MP.peer.destroy(); } catch (e) {}
-  Object.assign(MP, { kind: null, on: false, peer: null, conn: null, in: null, phase: '' }); dropP2(); overlay('');
-  if (guest) location.assign(location.pathname);   // misafir: tek kişilik oyuna dön
+  try { MP.lock && MP.lock.release(); } catch (e) {}
+  Object.assign(MP, { kind: null, on: false, peer: null, conn: null, id: '', in: null, phase: '', lock: null }); held2.length = 0;
+  if (guest) return location.assign(location.pathname);   // misafir: tek kişilik oyuna dön
+  if (G && G.mode === 'battle') endBattle(); else overlay('');
 }
-function mpFail(msg) {
+function mpFail(msg) {   // geri dönüşü olmayan hata
   const guest = MP.kind === 'guest';
   try { MP.peer && MP.peer.destroy(); } catch (e) {}
-  Object.assign(MP, { on: false, peer: null, conn: null, phase: 'lost' }); if (!guest) { MP.kind = null; dropP2(); }
-  if (!guest && G && scene === 'play' && G.state === 'play') { G.toast = { text: 'Arkadaşın ayrıldı', t: 2 }; MP.phase = ''; return; }
-  overlay(card('📵 ' + msg, guest ? 'İki telefon aynı Wi-Fi\'da olsun.' : 'Tek kişi devam edebilirsin.',
+  Object.assign(MP, { on: false, peer: null, conn: null, phase: 'lost' }); if (!guest) MP.kind = null;
+  if (!guest && G && G.mode === 'battle') { endBattle(); }
+  overlay(card('📵 ' + msg, guest ? 'İki cihaz da internete bağlı olsun.' : 'Tek kişi devam edebilirsin.',
     guest ? '<button data-a="reload">Tekrar dene</button><button class="alt" data-a="mpoff">Tek oyna</button>' : '<button data-a="closeov">Tamam</button>'));
+}
+function showQR(h, p) {
+  const q = qrcode(0, 'M'); q.addData(location.origin + location.pathname + '?join=' + MP.id); q.make();
+  overlay(card(h, p, `<div class="qr">${q.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div><button class="alt" data-a="mpoff">${G && G.mode === 'battle' ? 'Bitir' : 'Vazgeç'}</button>`));
 }
 async function mpHost() {
   overlay(card('⏳ Hazırlanıyor', 'Bağlantı kuruluyor…'));
   try { await Promise.all([loadLib('Peer'), loadLib('qrcode')]); } catch (e) { return mpFail('İnternete bağlanılamadı'); }
-  const a = crypto.getRandomValues(new Uint8Array(16)), id = 'sovalye-' + [...a].map(v => 'abcdefghijklmnopqrstuvwxyz0123456789'[v % 36]).join('');
-  MP.kind = 'host'; const peer = MP.peer = new Peer(id, { debug: 0 });
-  peer.on('open', () => {
-    if (MP.peer !== peer || MP.conn) return;
-    const q = qrcode(0, 'M'); q.addData(location.origin + location.pathname + '?join=' + id); q.make();
-    overlay(card('📷 Arkadaşın okutsun', 'Öbür telefonun kamerasını bu koda tut.', `<div class="qr">${q.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div><button class="alt" data-a="mpoff">Vazgeç</button>`));
-  });
+  const a = crypto.getRandomValues(new Uint8Array(16));
+  MP.id = 'sovalye-' + [...a].map(v => 'abcdefghijklmnopqrstuvwxyz0123456789'[v % 36]).join(''); MP.kind = 'host'; keepAwake(); hostPeer();
+}
+function hostPeer() {
+  const peer = MP.peer = new Peer(MP.id, { debug: 0 });
+  const mine = () => MP.peer === peer && MP.kind === 'host';
+  peer.on('open', () => { if (mine() && !MP.on && !ov.querySelector('.qr')) showQR('📷 Arkadaşın okutsun', 'Öbür telefonun kamerasını bu koda tut.'); });
   peer.on('connection', c => {
-    if (MP.peer !== peer || MP.conn) { c.on('open', () => c.close()); return; }   // yalnız bir arkadaş bağlanabilir
+    if (!mine() || MP.on || MP.conn) { c.on('open', () => c.close()); return; }   // aynı anda yalnız bir arkadaş
     MP.conn = c;
     c.on('open', () => {
-      MP.on = true; MP.in = null; MP.lastIn = performance.now(); peer.disconnect();   // eşleşme bitti: sunucudan çık, başkası bağlanamaz
-      if (G && scene === 'play') { G.p2 = Object.assign(mkP(1, 3), { inv: 2 }); G.ps = players(G); }
-      overlay(card('✅ Arkadaşın bağlandı', 'O yeşil şövalye. Bir bölüm seç, birlikte başlayın.', '<button data-a="closeov">Tamam</button>')); sfx('item');
+      if (MP.conn !== c) return;
+      MP.on = true; MP.in = null; MP.lastIn = performance.now(); peer.disconnect(); keepAwake();   // eşleşme bitti: sunucudan çık
+      if (G && G.state === 'link') { G.state = MP.prev === 'round' ? 'round' : 'play'; overlay(''); sfx('item'); return; }   // kopan tur kaldığı yerden
+      overlay(card('✅ Arkadaşın bağlandı', 'Sen kırmızı, o yeşil şövalye.', '<button data-a="battle">Savaşa başla</button>')); sfx('item');
     });
-    c.on('data', mpInput);
-    c.on('close', () => { if (MP.conn === c) mpFail('Bağlantı koptu'); });
+    c.on('data', d => { if (MP.conn === c) mpInput(d); });
+    c.on('close', () => { if (MP.conn === c) hostLost(); });
+    c.on('error', () => { if (MP.conn === c && !MP.on) { MP.conn = null; } });
   });
-  peer.on('error', () => { if (MP.peer === peer && !MP.on) mpFail('Bağlantı kurulamadı'); });
+  peer.on('disconnected', () => { if (mine() && !MP.on) setTimeout(() => { if (mine() && !MP.on && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 2000); });
+  peer.on('error', e => {
+    if (!mine() || MP.on) return;
+    if (e.type === 'browser-incompatible' || e.type === 'ssl-unavailable') return mpFail('Bu tarayıcı desteklemiyor');
+    setTimeout(() => { if (mine() && !MP.on) { try { peer.destroy(); } catch (er) {} hostPeer(); } }, 3000);   // sunucu kodu henüz bırakmadıysa biraz sonra yeniden
+  });
+}
+function hostLost() {   // arkadaşın telefonu uyudu ya da ağ koptu: tur donar, kendiliğinden geri bağlanması beklenir
+  if (!MP.on) return;
+  MP.on = false; MP.conn = null; MP.in = null; held2.length = 0;
+  if (G && G.mode === 'battle' && scene === 'play' && ['play', 'round', 'paused'].includes(G.state)) { MP.prev = G.state; G.state = 'link'; }
+  showQR('🔌 Bağlantı koptu', 'Arkadaşın telefonu açınca kendiliğinden bağlanır.<br>Olmazsa bu kodu yeniden okutsun.');
+  const peer = MP.peer;
+  if (peer && !peer.destroyed) { if (peer.disconnected) peer.reconnect(); } else hostPeer();
 }
 function mpInput(raw) {   // misafirden gelen: { d: yön | null, b: bomba sayacı, z: durdur sayacı }
   if (typeof raw !== 'string' || raw.length > 200) return;
@@ -1401,53 +1481,78 @@ function mpInput(raw) {   // misafirden gelen: { d: yön | null, b: bomba sayac�
   if (!d || typeof d !== 'object' || !Number.isInteger(d.b) || !Number.isInteger(d.z)) return;
   MP.lastIn = performance.now();
   held2.length = 0; if (typeof d.d === 'string' && Object.hasOwn(DIRS, d.d)) held2.push(d.d);
-  if (MP.in && d.b > MP.in.b && G && G.p2) dropBomb(G.p2);
-  if (MP.in && d.z > MP.in.z && G && scene === 'play') { if (G.state === 'paused') { G.state = 'play'; overlay(''); } else pause(); }
+  const battle = G && G.mode === 'battle' && scene === 'play';
+  if (MP.in && d.b > MP.in.b && battle) dropBomb(G.p2);
+  if (MP.in && d.z > MP.in.z && battle) { if (G.state === 'paused') { G.state = 'play'; overlay(''); } else pause(); }
   MP.in = { b: d.b, z: d.z };
 }
 async function mpJoin() {
   MP.kind = 'guest'; scene = 'worlds';
   overlay(card('⏳ Bağlanıyor', 'Arkadaşının oyununa bağlanıyorsun…'));
   try { await loadLib('Peer'); } catch (e) { return mpFail('İnternete bağlanılamadı'); }
-  const peer = MP.peer = new Peer({ debug: 0 });
-  peer.on('open', () => {
-    const c = MP.conn = peer.connect(JOIN, { serialization: 'raw', reliable: false });
-    c.on('open', () => { MP.on = true; MP.lastIn = performance.now(); peer.disconnect(); MP.phase = 'ready';
-      overlay(card('✅ Bağlandı', 'Sen yeşil şövalyesin.<br>Bölümü arkadaşın seçecek.', '<button data-a="ready">Hazırım</button>')); });
-    c.on('data', mpSnap);
-    c.on('close', () => mpFail('Bağlantı koptu'));
-  });
-  peer.on('error', () => { if (!MP.on) mpFail('Bağlanılamadı'); });
+  MP.tries = 0; guestConnect();
 }
-const PHASE = { play: 'play', clear: 'play', dead: 'play', done: 'done', over: 'over', paused: 'paused' };
-function mpSnap(raw) {   // misafir: oyunu yöneten telefondan gelen anlık görüntü
+function guestConnect() {
+  try { MP.peer && MP.peer.destroy(); } catch (e) {}
+  const peer = MP.peer = new Peer({ debug: 0 });
+  const retry = () => {
+    if (MP.peer !== peer || MP.on) return;
+    try { peer.destroy(); } catch (e) {}
+    if (++MP.tries > 10) return mpFail('Bağlanılamadı');
+    setTimeout(() => { if (MP.peer === peer && !MP.on) guestConnect(); }, 2500);
+  };
+  peer.on('open', () => {
+    const c = peer.connect(JOIN, { serialization: 'raw', reliable: false });
+    const t = setTimeout(retry, 8000);
+    c.on('open', () => {
+      clearTimeout(t); if (MP.peer !== peer) return;
+      MP.conn = c; MP.on = true; MP.tries = 0; MP.lastIn = performance.now(); peer.disconnect(); keepAwake();
+      if (!MP.welcomed) { MP.welcomed = true; MP.phase = 'ready'; overlay(card('✅ Bağlandı', 'Sen yeşil şövalyesin.<br>Savaşı arkadaşın başlatacak.', '<button data-a="ready">Hazırım</button>')); }
+      else MP.phase = '';   // yeniden bağlandı: gelen ilk görüntü ekranı tazeler
+    });
+    c.on('data', d => { if (MP.conn === c) mpSnap(d); });
+    c.on('close', () => { if (MP.conn === c) guestLost(); });
+  });
+  peer.on('error', retry);
+}
+function guestLost() {
+  if (!MP.on) return;
+  MP.on = false; MP.conn = null; MP.phase = 'link';
+  overlay(card('🔌 Yeniden bağlanıyor', 'Bir saniye…', '<button class="alt" data-a="mpoff">Tek oyna</button>'));
+  MP.tries = 0; guestConnect();
+}
+function mpSnap(raw) {   // misafir: oyunu yöneten cihazdan gelen anlık görüntü
   if (typeof raw !== 'string') return;
   let g; try { g = JSON.parse(raw); } catch (e) { return; }
   if (!g || typeof g !== 'object') return;
   MP.lastIn = performance.now();
   if (g.k === 'm') { G = null; scene = 'worlds'; document.body.classList.remove('playing'); return mpPhase('wait'); }
-  if (g.k !== 's' || !Number.isInteger(g.w) || !Number.isInteger(g.l) || g.w < 0 || g.w > 7 || g.l < 0 || g.l > 7 || !g.p || !Array.isArray(g.map)) return;
-  g.th = THEMES[WORLDS[g.w].th]; g.name = `${g.w + 1}-${g.l + 1}`; g.amb = []; g.R = {}; g.ps = players(g);
-  if (Array.isArray(g.pv)) [prog.lives, prog.bombs, prog.fire, prog.speed] = g.pv.map(v => Number(v) || 0);   // yalnız panel için; kaydedilmez
+  if (g.k !== 's' || typeof g.thk !== 'string' || !Object.hasOwn(THEMES, g.thk) || !g.p || !g.p2 || !Array.isArray(g.map)) return;
+  g.mode = 'battle'; g.th = THEMES[g.thk]; g.round = Math.max(1, g.round | 0); g.name = 'Tur ' + g.round; g.amb = []; g.R = {}; g.ps = players(g);
+  g.win = g.win === 0 || g.win === 1 ? g.win : -1; g.score = [0, 1].map(i => (Array.isArray(g.score) ? g.score[i] : 0) | 0);
+  for (const p of g.ps) for (const k of ['bombs', 'fire', 'speed']) p[k] = p[k] | 0;
   for (const k of Array.isArray(g.fx) ? g.fx : []) if (typeof k === 'string') sfx(k);
   G = g; scene = 'play'; document.body.classList.add('playing');
-  mpPhase(Object.hasOwn(PHASE, g.state) ? PHASE[g.state] : 'play');
+  mpPhase(g.state === 'round' ? 'round' + g.round : g.state === 'match' ? 'match' : g.state === 'paused' ? 'paused' : 'play');
 }
 function mpPhase(ph) {   // misafirin ekran kartı; yalnız durum değişince yenilenir (düğmeler çalışsın)
-  if (MP.phase === 'ready' || MP.phase === 'lost' || MP.phase === ph) return;
+  if (MP.phase === 'ready' || MP.phase === 'lost' || MP.phase === 'link' || MP.phase === ph) return;
   MP.phase = ph;
-  overlay({ play: '', wait: card('⏳ Bekle', 'Arkadaşın bölüm seçiyor.'), done: card('⭐ Bölüm tamam!', 'Arkadaşın sıradakini açacak.'),
-    over: card('Canınız bitti', 'Arkadaşın yeniden başlatabilir.'), paused: card('Durdu', G ? 'Bölüm ' + G.name : '', '<button data-a="gresume">Devam</button>') }[ph]);
+  if (ph === 'play') return overlay('');
+  if (ph === 'wait') return overlay(card('⏳ Bekle', 'Arkadaşın savaşı başlatacak.'));
+  if (ph === 'paused') return overlay(card('Durdu', G ? G.name : '', '<button data-a="gresume">Devam</button>'));
+  if (ph === 'match') return overlay(`<div class="card"><h2>🏆 ${G.win < 0 ? 'Berabere' : NAMES[G.win] + ' kazandı!'}</h2>${scoreLine(G.score)}<p>Arkadaşın yeniden başlatabilir.</p></div>`);
+  overlay(`<div class="card"><h2>${G.round}. tur: ${G.win < 0 ? 'Berabere!' : NAMES[G.win] + ' kazandı'}</h2>${scoreLine(G.score)}<p>Sıradaki tur başlıyor…</p></div>`);
 }
 const R2 = (k, v) => typeof v === 'number' ? Math.round(v * 100) / 100 : v;
 function mpTick(now) {
   if (!MP.on || !MP.conn || !MP.conn.open) return;
-  if (now - MP.lastIn > 6000) return mpFail('Bağlantı koptu');
+  if (now - MP.lastIn > 6000) return MP.kind === 'guest' ? guestLost() : hostLost();
   const dc = MP.conn.dataChannel; if (dc && dc.bufferedAmount > 65536) return;   // sıra birikmişse bu kareyi atla
   MP.tick++;
   if (MP.kind === 'guest') { if (MP.tick % 2 === 0) MP.conn.send(JSON.stringify({ d: held[held.length - 1] || null, b: MP.b, z: MP.z })); return; }
-  if (scene === 'play' && G) MP.conn.send(JSON.stringify({ k: 's', id: G.id, w: G.w, l: G.l, map: G.map, items: G.items, door: G.door, bombs: G.bombs, flames: G.flames, parts: G.parts, shots: G.shots, rings: G.rings,
-    enemies: G.enemies, boss: G.boss, p: G.p, p2: G.p2, t: G.t, state: G.state, shake: G.shake, toast: G.toast, pv: [prog.lives, prog.bombs, prog.fire, prog.speed], fx: MP.fx.splice(0) }, R2));
+  if (scene === 'play' && G && G.mode === 'battle') MP.conn.send(JSON.stringify({ k: 's', id: G.id, thk: G.thk, round: G.round, score: G.score, win: G.win, map: G.map, items: G.items, bombs: G.bombs, flames: G.flames,
+    parts: G.parts, rings: G.rings, p: G.p, p2: G.p2, t: G.t, state: G.state, shake: G.shake, toast: G.toast, fx: MP.fx.splice(0), enemies: [], shots: [] }, R2));
   else if (MP.tick % 10 === 0) MP.conn.send('{"k":"m"}');
 }
 
@@ -1461,12 +1566,12 @@ addEventListener('resize', fit);
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now;
-  if (scene === 'play' && G && MP.kind !== 'guest' && !['done', 'over', 'paused'].includes(G.state)) step(dt);
+  if (scene === 'play' && G && MP.kind !== 'guest' && !['done', 'over', 'paused', 'match', 'link'].includes(G.state)) step(dt);
   mpTick(now); fit(); draw(); requestAnimationFrame(frame);
 }
 curWorld = curWorldOf(); fit(); requestAnimationFrame(frame);
 if (!IN_APP && /^sovalye-[a-z0-9]{16}$/.test(JOIN || '')) mpJoin();   // QR'dan açıldı: misafir olarak bağlan
-window.__b = { MP, held2, mpInput, mpSnap, get G() { return G; }, step, draw, dropBomb, press, release, startLevel, toMap, mapTap, levelCfg, prog: () => prog, get scene() { return scene; }, set world(w) { curWorld = w; } };
+window.__b = { MP, BT, held2, mpInput, mpSnap, get G() { return G; }, step, draw, dropBomb, press, release, startLevel, toMap, mapTap, levelCfg, prog: () => prog, get scene() { return scene; }, set world(w) { curWorld = w; } };
 </script>
 </body>
 </html>
