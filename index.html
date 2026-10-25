@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Şövalye Macerası · deneme</title>
+<script>   // ana ekran simgesi ve adı: yalnız bağımsız sürümde (Sayı Bahçesi'nin kopyasında onun kendi simgesi geçerli)
+  if (!/\/sayi-bahcesi\/sovalye\//.test(location.pathname)) for (const [t, a] of [['link', { rel: 'apple-touch-icon', href: 'icons/icon-180.png' }], ['link', { rel: 'icon', type: 'image/png', href: 'icons/icon-192.png' }],
+    ['link', { rel: 'manifest', href: 'manifest.webmanifest' }], ['meta', { name: 'apple-mobile-web-app-title', content: 'Şövalye' }]]) document.head.appendChild(Object.assign(document.createElement(t), a));
+</script>
 <style>
   @font-face { font-family: 'Baloo 2'; font-weight: 800; font-display: swap; src: url(../fonts/baloo2-800.woff) format('woff'); }   /* Sayı Bahçesi içinde yüklenir */
   * { box-sizing: border-box; touch-action: none; }
@@ -48,7 +52,7 @@
    8 dünya × 8 bölüm. 1–7. bölümler: bütün düşmanları yok et, blokların altındaki kapıya gir. 8. bölüm: dünyanın boss'u.
    Izgara 15×11: kenarlar ve çift koordinatlı sütunlar sert taş, aralar rastgele kırılan blok. Alev kendine de değer.
    Görünüm: bloklar üstten-önden (3/4) çizilir; zemin ve sert taşlar bölüm başında ayrı bir tuvale bir kez çizilir. */
-const VERSION = 'v0.11';   // her değişiklikte artır: v0.2, v0.3 …
+const VERSION = 'v0.12';   // her değişiklikte artır: v0.2, v0.3 …
 // Sayı Bahçesi'nin içinde (sayi-bahcesi/sovalye/) 1 bilet = 3 can (bölümler arası taşınır), bitirince altın; ayrı repoda biletsiz bağımsız oyun
 const IN_APP = /\/sayi-bahcesi\/sovalye\//.test(location.pathname) || /[?&]app\b/.test(location.search);
 const Wallet = {
